@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from . import change_manager, semantic_store
 from .config import settings
-from .markdown_service import render_text_file
+from .markdown_service import render_notebook, render_text_file
 from .task_manager import tasks
 
 
@@ -63,11 +63,14 @@ UPLOAD_ROOTS = (
 PREVIEW_EXTENSIONS = {
     ".md", ".txt", ".py", ".js", ".ts", ".tsx", ".jsx", ".json",
     ".yaml", ".yml", ".css", ".html", ".xml", ".drawio", ".csv",
+    ".ipynb",
 }
+# 可通过 /api/raw 直接在浏览器内嵌查看的二进制类型
+EMBED_EXTENSIONS = {".pdf"}
 UPLOAD_EXTENSIONS = PREVIEW_EXTENSIONS | {
     ".pdf", ".epub", ".mobi", ".png", ".jpg", ".jpeg", ".gif", ".svg",
     ".webp", ".docx", ".pptx", ".xlsx", ".java", ".go", ".rs", ".cpp",
-    ".c", ".h", ".hpp", ".sql", ".sh", ".ps1",
+    ".c", ".h", ".hpp", ".sql", ".sh", ".ps1", ".ipynb",
 }
 
 
@@ -154,6 +157,32 @@ def tree_node(path: Path, depth: int = 0) -> dict[str, object]:
 
 
 def directory_options() -> list[dict[str, str]]:
+    root_labels = {
+        "00_Inbox": "收件箱 · 待处理",
+        "10_Projects": "项目",
+        "20_Areas": "长期领域",
+        "30_Resources": "资料库",
+        "40_Notes": "原子笔记",
+        "50_MOCs": "内容地图",
+        "60_Outputs": "输出成果",
+        "_assets": "附件资源",
+    }
+    child_labels = {
+        "PDFs": "PDF 文档",
+        "Books": "电子书",
+        "Code": "代码资料",
+        "Drawio": "Drawio 图表",
+        "Text": "文本资料",
+        "Documents": "Office 文档",
+    }
+
+    def label(path: Path) -> str:
+        path_text = rel(path)
+        parts = Path(path_text).parts
+        names = [root_labels.get(parts[0], parts[0])]
+        names.extend(child_labels.get(part, part) for part in parts[1:])
+        return f"{' / '.join(names)}（{path_text}）"
+
     result: list[dict[str, str]] = []
     for root in UPLOAD_ROOTS:
         if not root.exists():
@@ -165,7 +194,7 @@ def directory_options() -> list[dict[str, str]]:
             and not path.name.startswith(".")
             and len(path.relative_to(root).parts) <= 3
         ]
-        result.extend({"path": rel(path), "label": rel(path)} for path in directories)
+        result.extend({"path": rel(path), "label": label(path)} for path in directories)
     return sorted(result, key=lambda item: item["path"].lower())
 
 
@@ -213,14 +242,20 @@ def read_payload(target: Path) -> dict[str, str]:
     if target.suffix.lower() not in PREVIEW_EXTENSIONS:
         raise HTTPException(status_code=415, detail="该文件类型暂不支持在线预览")
     content = kb.read_text(target)
-    rendered, frontmatter = render_text_file(target, content)
+    suffix = target.suffix.lower()
+    if suffix == ".ipynb":
+        rendered, frontmatter = render_notebook(content)
+        fmt = "notebook"
+    else:
+        rendered, frontmatter = render_text_file(target, content)
+        fmt = "markdown" if suffix == ".md" else "code"
     return {
         "path": rel(target),
         "name": target.name,
         "content": content,
         "html": rendered,
         "frontmatter": frontmatter,
-        "format": "markdown" if target.suffix.lower() == ".md" else "code",
+        "format": fmt,
     }
 
 
@@ -427,6 +462,16 @@ def list_directories() -> dict[str, object]:
 @app.get("/api/file")
 def read_file(path: str = Query(min_length=1)) -> dict[str, str]:
     return read_payload(safe_path(path))
+
+
+@app.get("/api/raw")
+def read_raw(path: str = Query(min_length=1)) -> FileResponse:
+    target = safe_path(path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    if target.suffix.lower() not in EMBED_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="该文件类型不支持内嵌预览")
+    return FileResponse(target, filename=target.name, content_disposition_type="inline")
 
 
 @app.get("/api/wiki")

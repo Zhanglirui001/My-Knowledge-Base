@@ -91,10 +91,13 @@ async function runSearch(query) {
 }
 
 async function openFile(path, endpoint = "/api/file") {
+  if (endpoint === "/api/file" && /\.pdf$/i.test(path)) { openPdf(path); return; }
   try {
     const separator = endpoint.includes("?") ? "&" : "?";
     const parameter = endpoint === "/api/wiki" ? "title" : "path";
     const data = await api(`${endpoint}${separator}${parameter}=${encodeURIComponent(path)}`);
+    $("#readerPdf").classList.add("hidden");
+    $("#readerPdf").removeAttribute("src");
     $("#readerPath").textContent = data.path;
     $("#readerTitle").textContent = data.name;
     $("#readerRendered").innerHTML = data.html;
@@ -103,13 +106,25 @@ async function openFile(path, endpoint = "/api/file") {
     $("#readerFrontmatter").classList.toggle("hidden", !data.frontmatter);
     $("#readerRendered").classList.remove("hidden");
     $("#readerContent").classList.add("hidden");
-    $("#toggleRawButton").classList.toggle("hidden", data.format !== "markdown");
+    $("#toggleRawButton").classList.toggle("hidden", !["markdown", "notebook"].includes(data.format));
     $("#reader").showModal();
   } catch (error) { toast(error.message); }
 }
+function openPdf(path) {
+  $("#readerRendered").classList.add("hidden");
+  $("#readerContent").classList.add("hidden");
+  $("#readerFrontmatter").classList.add("hidden");
+  $("#toggleRawButton").classList.add("hidden");
+  $("#readerPath").textContent = path;
+  $("#readerTitle").textContent = path.split("/").pop();
+  const frame = $("#readerPdf");
+  frame.src = `/api/raw?path=${encodeURIComponent(path)}`;
+  frame.classList.remove("hidden");
+  $("#reader").showModal();
+}
 function renderTree(node, depth = 0) {
   if (node.kind === "directory") return `<details class="tree-group"${depth === 0 ? " open" : ""}><summary title="${escapeHtml(node.path)}"><span class="tree-label">${escapeHtml(node.name)}</span></summary><div class="tree-children">${(node.children || []).map((child) => renderTree(child, depth + 1)).join("")}</div></details>`;
-  const supported = ["md", "txt", "py", "js", "ts", "tsx", "jsx", "json", "yaml", "yml", "css", "html", "xml", "drawio", "csv"].includes(node.kind);
+  const supported = ["md", "txt", "py", "js", "ts", "tsx", "jsx", "json", "yaml", "yml", "css", "html", "xml", "drawio", "csv", "ipynb", "pdf"].includes(node.kind);
   return `<button class="tree-file" ${supported ? `data-path="${escapeHtml(node.path)}"` : "disabled"} title="${escapeHtml(node.path)}"><span class="file-kind">${escapeHtml(node.kind)}</span><span class="tree-label">${escapeHtml(node.name)}</span></button>`;
 }
 async function loadFileTree() {
@@ -157,6 +172,39 @@ function setUploadFiles(files) {
   state.uploadFiles = [...files];
   $("#uploadFileList").classList.toggle("hidden", state.uploadFiles.length === 0);
   $("#uploadFileList").innerHTML = state.uploadFiles.map((file) => `<div class="upload-file-row"><strong>${escapeHtml(file.name)}</strong><span>${formatBytes(file.size)}</span></div>`).join("");
+  resetUploadProgress();
+}
+function setUploadProgress(percent, text, phase) {
+  const box = $("#uploadProgress");
+  box.classList.remove("hidden", "success", "failed");
+  if (phase) box.classList.add(phase);
+  $("#uploadProgressFill").style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  $("#uploadProgressText").textContent = text;
+}
+function resetUploadProgress() {
+  const box = $("#uploadProgress");
+  box.classList.add("hidden");
+  box.classList.remove("success", "failed");
+  $("#uploadProgressFill").style.width = "0%";
+  $("#uploadProgressText").textContent = "";
+}
+function uploadWithProgress(form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    });
+    xhr.addEventListener("load", () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (_) { /* 非 JSON 响应 */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.detail || `上传失败（HTTP ${xhr.status}）`));
+    });
+    xhr.addEventListener("error", () => reject(new Error("网络错误，未能连接到服务器")));
+    xhr.addEventListener("abort", () => reject(new Error("上传已取消")));
+    xhr.send(form);
+  });
 }
 async function submitUpload(event) {
   event.preventDefault();
@@ -167,17 +215,27 @@ async function submitUpload(event) {
   form.append("target_dir", $("#uploadDirectory").value);
   form.append("confirmed", "true");
   form.append("rebuild_indexes", $("#uploadIndexes").checked ? "true" : "false");
+  const totalBytes = state.uploadFiles.reduce((sum, file) => sum + file.size, 0);
   button.disabled = true; button.textContent = "上传中…";
+  setUploadProgress(0, "开始上传…", null);
   try {
-    const data = await api("/api/upload", { method: "POST", body: form });
-    $("#uploadDialog").close();
+    const data = await uploadWithProgress(form, (ratio) => {
+      const percent = Math.round(ratio * 100);
+      const sent = formatBytes(Math.round(ratio * totalBytes));
+      setUploadProgress(percent, percent >= 100 ? "上传完成，服务器处理中…" : `正在上传 ${sent} / ${formatBytes(totalBytes)}（${percent}%）`, null);
+    });
+    setUploadProgress(100, `✓ ${data.message || "上传成功"}`, "success");
+    toast(data.message || "上传成功");
     setUploadFiles([]); $("#uploadInput").value = "";
-    toast(data.message);
     await Promise.all([loadStatus(), loadInbox()]);
     if (data.task) { await loadTasks(); openTaskDrawer(); }
     state.directoriesLoaded = false;
     loadFileTree();
-  } catch (error) { toast(error.message); }
+    setTimeout(() => { $("#uploadDialog").close(); resetUploadProgress(); }, 1200);
+  } catch (error) {
+    setUploadProgress(100, `✕ ${error.message}`, "failed");
+    toast(error.message);
+  }
   finally { button.disabled = false; button.textContent = "确认上传"; }
 }
 
@@ -314,8 +372,9 @@ $(".search-hints").addEventListener("click", (event) => { const button = event.t
 document.addEventListener("click", (event) => { const file = event.target.closest("[data-path]"); if (file && !file.disabled) openFile(file.dataset.path); const plan = event.target.closest("[data-plan-id]"); if (plan && !event.target.closest("#applyPlanButton")) showPlan(plan.dataset.planId); });
 $("#readerRendered").addEventListener("click", (event) => { const link = event.target.closest("a"); if (!link) return; const url = new URL(link.href, location.origin); if (url.pathname === "/api/wiki") { event.preventDefault(); openFile(url.searchParams.get("title"), "/api/wiki"); } });
 $("#toggleRawButton").addEventListener("click", () => { $("#readerRendered").classList.toggle("hidden"); $("#readerContent").classList.toggle("hidden"); });
-$("#closeReader").addEventListener("click", () => $("#reader").close());
-$("#reader").addEventListener("click", (event) => { if (event.target === $("#reader")) $("#reader").close(); });
+function closeReader() { $("#reader").close(); $("#readerPdf").removeAttribute("src"); }
+$("#closeReader").addEventListener("click", closeReader);
+$("#reader").addEventListener("click", (event) => { if (event.target === $("#reader")) closeReader(); });
 $("#refreshLibraryButton").addEventListener("click", loadFileTree);
 $("#previewInboxButton").addEventListener("click", previewInbox);
 $("#refreshChangesButton").addEventListener("click", () => loadChanges());
@@ -324,8 +383,8 @@ $("#agentForm").addEventListener("submit", runAgent);
 
 $("#openUploadButton").addEventListener("click", () => openUpload());
 $("#inboxUploadButton").addEventListener("click", () => openUpload("00_Inbox"));
-$("#closeUploadButton").addEventListener("click", () => $("#uploadDialog").close());
-$("#cancelUploadButton").addEventListener("click", () => $("#uploadDialog").close());
+$("#closeUploadButton").addEventListener("click", () => { $("#uploadDialog").close(); resetUploadProgress(); });
+$("#cancelUploadButton").addEventListener("click", () => { $("#uploadDialog").close(); resetUploadProgress(); });
 $("#uploadInput").addEventListener("change", (event) => setUploadFiles(event.target.files));
 $("#uploadDropzone").addEventListener("dragover", (event) => { event.preventDefault(); $("#uploadDropzone").classList.add("dragging"); });
 $("#uploadDropzone").addEventListener("dragleave", () => $("#uploadDropzone").classList.remove("dragging"));

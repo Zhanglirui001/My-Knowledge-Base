@@ -230,6 +230,16 @@ input[type="search"]:focus, textarea:focus, select:focus { border-color: var(--a
 .markdown-body th { background: #f2f5f3; }
 .markdown-body hr { margin: 28px 0; border: 0; border-top: 1px solid var(--line); }
 .reader-raw { margin: 0; padding: 26px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.8 "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+.reader-pdf { display: block; width: 100%; height: min(84vh, 826px); border: 0; background: #525659; }
+.notebook { max-width: 760px; margin: 0 auto; padding: 26px 34px 60px; }
+.nb-cell { margin: 0 0 20px; }
+.nb-md { line-height: 1.8; }
+.markdown-body .nb-source { margin: 0 0 8px; }
+.markdown-body .nb-output { margin: 0 0 6px; padding: 11px 14px; overflow: auto; color: #27302c; background: #f4f7f5; border: 1px solid var(--line); border-radius: 6px; font: 11px/1.7 "Cascadia Code", Consolas, monospace; }
+.markdown-body .nb-output code { padding: 0; color: inherit; background: transparent; }
+.markdown-body .nb-error { color: #a8341f; background: #fbf0ee; border-color: #f0d3cd; }
+.markdown-body .nb-image { display: block; max-width: 100%; margin: 6px 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.nb-empty { color: var(--muted); font-size: 12px; }
 
 .upload-dialog { width: min(600px, calc(100vw - 30px)); max-height: 90vh; padding: 0; border: 0; border-radius: 8px; box-shadow: 0 24px 80px #15201c45; }
 .upload-dialog form { padding: 24px; }
@@ -248,6 +258,14 @@ input[type="search"]:focus, textarea:focus, select:focus { border-color: var(--a
 .field-label { display: block; margin: 0 0 7px; font-size: 11px; font-weight: 700; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 10px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.upload-progress { margin-top: 16px; }
+.upload-progress-bar { height: 6px; overflow: hidden; border-radius: 3px; background: #dde4e0; }
+.upload-progress-bar span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .2s ease; }
+.upload-progress.success .upload-progress-bar span { background: var(--success); }
+.upload-progress.failed .upload-progress-bar span { background: var(--danger); }
+.upload-progress-text { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.upload-progress.success .upload-progress-text { color: var(--success); font-weight: 700; }
+.upload-progress.failed .upload-progress-text { color: var(--danger); font-weight: 700; }
 
 .task-drawer { position: fixed; top: 0; right: 0; z-index: 60; width: min(420px, 100vw); height: 100vh; padding: 22px; border: 0; color: var(--ink); background: #fff; box-shadow: -20px 0 60px #17201d30; transform: translateX(105%); transition: transform .22s ease; overflow: auto; }
 .task-drawer.open { transform: translateX(0); }
