@@ -9,6 +9,8 @@ const state = {
   directoriesLoaded: false,
   selectedPlanId: null,
   tasks: [],
+  editor: null,
+  editing: false,
 };
 
 function escapeHtml(value) {
@@ -96,6 +98,7 @@ async function openFile(path, endpoint = "/api/file") {
     const separator = endpoint.includes("?") ? "&" : "?";
     const parameter = endpoint === "/api/wiki" ? "title" : "path";
     const data = await api(`${endpoint}${separator}${parameter}=${encodeURIComponent(path)}`);
+    exitEditMode();
     $("#readerPdf").classList.add("hidden");
     $("#readerPdf").removeAttribute("src");
     $("#readerPath").textContent = data.path;
@@ -107,20 +110,89 @@ async function openFile(path, endpoint = "/api/file") {
     $("#readerRendered").classList.remove("hidden");
     $("#readerContent").classList.add("hidden");
     $("#toggleRawButton").classList.toggle("hidden", !["markdown", "notebook"].includes(data.format));
+    state.editor = { path: data.path, format: data.format, mtime: data.mtime };
+    $("#editButton").classList.toggle("hidden", !["markdown", "code", "notebook"].includes(data.format));
     $("#reader").showModal();
   } catch (error) { toast(error.message); }
 }
 function openPdf(path) {
+  exitEditMode();
   $("#readerRendered").classList.add("hidden");
   $("#readerContent").classList.add("hidden");
   $("#readerFrontmatter").classList.add("hidden");
   $("#toggleRawButton").classList.add("hidden");
+  $("#editButton").classList.add("hidden");
+  state.editor = null;
   $("#readerPath").textContent = path;
   $("#readerTitle").textContent = path.split("/").pop();
   const frame = $("#readerPdf");
   frame.src = `/api/raw?path=${encodeURIComponent(path)}`;
   frame.classList.remove("hidden");
   $("#reader").showModal();
+}
+async function enterEditMode() {
+  const editor = state.editor;
+  if (!editor) return;
+  $("#readerRendered").classList.add("hidden");
+  $("#readerContent").classList.add("hidden");
+  $("#readerFrontmatter").classList.add("hidden");
+  $("#toggleRawButton").classList.add("hidden");
+  $("#editButton").classList.add("hidden");
+  if (editor.format === "notebook") {
+    try {
+      const data = await api(`/api/notebook?path=${encodeURIComponent(editor.path)}`);
+      editor.mtime = data.mtime;
+      $("#notebookEditor").innerHTML = data.cells.map((cell) => `
+        <div class="nb-edit-cell" data-index="${cell.index}">
+          <span class="nb-edit-badge ${cell.cell_type === "code" ? "code" : "md"}">${cell.cell_type === "code" ? "代码" : "Markdown"}</span>
+          <textarea class="nb-edit-source" spellcheck="false" rows="${Math.max(2, String(cell.source).split("\n").length)}">${escapeHtml(cell.source)}</textarea>
+        </div>`).join("");
+      $("#notebookEditor").classList.remove("hidden");
+    } catch (error) { toast(error.message); exitEditMode(); return; }
+  } else {
+    const raw = $("#readerContent").textContent;
+    $("#editorArea").value = raw;
+    $("#editorArea").classList.remove("hidden");
+  }
+  $("#editToolbar").classList.remove("hidden");
+  state.editing = true;
+}
+function exitEditMode() {
+  $("#editorArea").classList.add("hidden");
+  $("#notebookEditor").classList.add("hidden");
+  $("#notebookEditor").innerHTML = "";
+  $("#editToolbar").classList.add("hidden");
+  state.editing = false;
+}
+async function saveEdit() {
+  const editor = state.editor;
+  if (!editor) return;
+  if (!await confirmAction("确认保存", "保存后会覆盖原文件，无法撤销。是否继续？")) return;
+  const rebuild = $("#editRebuild").checked;
+  const button = $("#saveButton");
+  button.disabled = true; button.textContent = "保存中…";
+  try {
+    let data;
+    if (editor.format === "notebook") {
+      const cells = $$("#notebookEditor .nb-edit-cell").map((node) => ({
+        index: Number(node.dataset.index),
+        source: node.querySelector(".nb-edit-source").value,
+      }));
+      data = await api("/api/notebook/save", { method: "POST", body: JSON.stringify({
+        path: editor.path, cells, confirmed: true, expected_mtime: editor.mtime, rebuild_indexes: rebuild,
+      }) });
+    } else {
+      data = await api("/api/file/save", { method: "POST", body: JSON.stringify({
+        path: editor.path, content: $("#editorArea").value, confirmed: true, expected_mtime: editor.mtime, rebuild_indexes: rebuild,
+      }) });
+    }
+    toast(data.message || "已保存");
+    exitEditMode();
+    await openFile(editor.path);
+    if (data.task) { await loadTasks(); openTaskDrawer(); }
+    loadFileTree();
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; button.textContent = "保存"; }
 }
 function renderTree(node, depth = 0) {
   if (node.kind === "directory") return `<details class="tree-group"${depth === 0 ? " open" : ""}><summary title="${escapeHtml(node.path)}"><span class="tree-label">${escapeHtml(node.name)}</span></summary><div class="tree-children">${(node.children || []).map((child) => renderTree(child, depth + 1)).join("")}</div></details>`;
@@ -372,9 +444,12 @@ $(".search-hints").addEventListener("click", (event) => { const button = event.t
 document.addEventListener("click", (event) => { const file = event.target.closest("[data-path]"); if (file && !file.disabled) openFile(file.dataset.path); const plan = event.target.closest("[data-plan-id]"); if (plan && !event.target.closest("#applyPlanButton")) showPlan(plan.dataset.planId); });
 $("#readerRendered").addEventListener("click", (event) => { const link = event.target.closest("a"); if (!link) return; const url = new URL(link.href, location.origin); if (url.pathname === "/api/wiki") { event.preventDefault(); openFile(url.searchParams.get("title"), "/api/wiki"); } });
 $("#toggleRawButton").addEventListener("click", () => { $("#readerRendered").classList.toggle("hidden"); $("#readerContent").classList.toggle("hidden"); });
-function closeReader() { $("#reader").close(); $("#readerPdf").removeAttribute("src"); }
+function closeReader() { exitEditMode(); $("#reader").close(); $("#readerPdf").removeAttribute("src"); }
 $("#closeReader").addEventListener("click", closeReader);
-$("#reader").addEventListener("click", (event) => { if (event.target === $("#reader")) closeReader(); });
+$("#reader").addEventListener("click", (event) => { if (event.target === $("#reader") && !state.editing) closeReader(); });
+$("#editButton").addEventListener("click", enterEditMode);
+$("#saveButton").addEventListener("click", saveEdit);
+$("#cancelEditButton").addEventListener("click", () => { exitEditMode(); if (state.editor) openFile(state.editor.path); });
 $("#refreshLibraryButton").addEventListener("click", loadFileTree);
 $("#previewInboxButton").addEventListener("click", previewInbox);
 $("#refreshChangesButton").addEventListener("click", () => loadChanges());

@@ -67,6 +67,8 @@ PREVIEW_EXTENSIONS = {
 }
 # 可通过 /api/raw 直接在浏览器内嵌查看的二进制类型
 EMBED_EXTENSIONS = {".pdf"}
+# 支持整文件在线编辑的文本类型（.ipynb 走按单元编辑的专用端点）
+TEXT_EDITABLE_EXTENSIONS = PREVIEW_EXTENSIONS - {".ipynb"}
 UPLOAD_EXTENSIONS = PREVIEW_EXTENSIONS | {
     ".pdf", ".epub", ".mobi", ".png", ".jpg", ".jpeg", ".gif", ".svg",
     ".webp", ".docx", ".pptx", ".xlsx", ".java", ".go", ".rs", ".cpp",
@@ -93,6 +95,27 @@ class OutlinePreviewRequest(BaseModel):
 
 class ConfirmRequest(BaseModel):
     confirmed: bool = False
+
+
+class SaveFileRequest(BaseModel):
+    path: str = Field(min_length=1)
+    content: str
+    confirmed: bool = False
+    expected_mtime: str | None = None
+    rebuild_indexes: bool = True
+
+
+class NotebookCellUpdate(BaseModel):
+    index: int = Field(ge=0)
+    source: str
+
+
+class SaveNotebookRequest(BaseModel):
+    path: str = Field(min_length=1)
+    cells: list[NotebookCellUpdate]
+    confirmed: bool = False
+    expected_mtime: str | None = None
+    rebuild_indexes: bool = True
 
 
 def rel(path: Path) -> str:
@@ -256,6 +279,7 @@ def read_payload(target: Path) -> dict[str, str]:
         "html": rendered,
         "frontmatter": frontmatter,
         "format": fmt,
+        "mtime": str(target.stat().st_mtime_ns),
     }
 
 
@@ -472,6 +496,101 @@ def read_raw(path: str = Query(min_length=1)) -> FileResponse:
     if target.suffix.lower() not in EMBED_EXTENSIONS:
         raise HTTPException(status_code=415, detail="该文件类型不支持内嵌预览")
     return FileResponse(target, filename=target.name, content_disposition_type="inline")
+
+
+def guard_mtime(target: Path, expected: str | None) -> None:
+    if expected is not None and str(target.stat().st_mtime_ns) != expected:
+        raise HTTPException(status_code=409, detail="文件已被其他修改，请关闭后重新打开再编辑")
+
+
+def submit_index_task(rebuild: bool) -> dict[str, object] | None:
+    if not rebuild:
+        return None
+    return tasks.submit("index", "更新全文与向量索引", rebuild_work)
+
+
+def notebook_cell_source(cell: dict[str, Any]) -> str:
+    source = cell.get("source", "")
+    if isinstance(source, list):
+        return "".join(str(item) for item in source)
+    return str(source or "")
+
+
+@app.post("/api/file/save")
+def save_file(request: SaveFileRequest) -> dict[str, object]:
+    require_confirmation(request.confirmed)
+    target = safe_path(request.path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    if target.suffix.lower() not in TEXT_EDITABLE_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="该文件类型不支持在线编辑")
+    with WRITE_LOCK:
+        guard_mtime(target, request.expected_mtime)
+        target.write_text(request.content.rstrip() + "\n", encoding="utf-8")
+        log_action("edit.save", rel(target), [rel(target)])
+        new_mtime = str(target.stat().st_mtime_ns)
+    task = submit_index_task(request.rebuild_indexes)
+    return {"saved": rel(target), "mtime": new_mtime, "task": task, "message": "已保存修改"}
+
+
+@app.get("/api/notebook")
+def read_notebook(path: str = Query(min_length=1)) -> dict[str, object]:
+    target = safe_path(path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    if target.suffix.lower() != ".ipynb":
+        raise HTTPException(status_code=415, detail="该文件不是 Notebook")
+    try:
+        notebook = json.loads(kb.read_text(target))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"无法解析 Notebook：{exc}") from exc
+    cells = [
+        {"index": index, "cell_type": cell.get("cell_type"), "source": notebook_cell_source(cell)}
+        for index, cell in enumerate(notebook.get("cells", []))
+        if cell.get("cell_type") in {"markdown", "code"}
+    ]
+    return {
+        "path": rel(target),
+        "name": target.name,
+        "mtime": str(target.stat().st_mtime_ns),
+        "cells": cells,
+    }
+
+
+@app.post("/api/notebook/save")
+def save_notebook(request: SaveNotebookRequest) -> dict[str, object]:
+    require_confirmation(request.confirmed)
+    target = safe_path(request.path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    if target.suffix.lower() != ".ipynb":
+        raise HTTPException(status_code=415, detail="该文件不是 Notebook")
+    with WRITE_LOCK:
+        guard_mtime(target, request.expected_mtime)
+        try:
+            notebook = json.loads(kb.read_text(target))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"无法解析 Notebook：{exc}") from exc
+        cells = notebook.get("cells", [])
+        for update in request.cells:
+            if update.index >= len(cells):
+                raise HTTPException(status_code=422, detail=f"单元下标越界：{update.index}")
+            cell = cells[update.index]
+            if cell.get("cell_type") not in {"markdown", "code"}:
+                raise HTTPException(status_code=422, detail=f"单元 {update.index} 不可编辑")
+            if notebook_cell_source(cell) == update.source:
+                continue
+            cell["source"] = update.source.splitlines(keepends=True)
+            if cell.get("cell_type") == "code":
+                cell["outputs"] = []
+                cell["execution_count"] = None
+        with target.open("w", encoding="utf-8") as handle:
+            json.dump(notebook, handle, ensure_ascii=False, indent=1)
+            handle.write("\n")
+        log_action("edit.save-notebook", rel(target), [rel(target)])
+        new_mtime = str(target.stat().st_mtime_ns)
+    task = submit_index_task(request.rebuild_indexes)
+    return {"saved": rel(target), "mtime": new_mtime, "task": task, "message": "已保存 Notebook 修改"}
 
 
 @app.get("/api/wiki")

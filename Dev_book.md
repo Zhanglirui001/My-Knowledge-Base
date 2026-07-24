@@ -330,3 +330,44 @@ Web v1 功能已经完成并运行在：
 - 切换文件 / 关闭对话框时会清空上次的进度状态
 
 > 资料库中不支持pdf、ipynb等类型文件的预览吗？
+
+- **ipynb** `/api/file`:`HTTP 200`,`format=notebook`,HTML 含渲染后的 Notebook 结构(292KB,含 base64 图表),你那个 `大模型在线API接入基础入门实战.ipynb` 可正常预览。
+- **PDF** `/api/raw`:`HTTP 200`,`Content-Type: application/pdf`,47MB,文件头 `%PDF-` 正确。
+- **安全**:越权路径 `../../secret.pdf` 被 `safe_path` 拦截,返回 `400`(限制在知识库目录内)。
+
+**改了什么**
+
+**后端**
+
+- [markdown_service.py](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/backend/app/markdown_service.py):新增 `render_notebook()` —— 解析 ipynb 的 cells,Markdown 单元复用现有渲染器,代码单元 + 输出(stream / 执行结果 / **base64 图片** / error 去 ANSI)转成带样式的块,**零新依赖**。出于安全**不渲染** notebook 里的原始 `text/html` 输出(回退纯文本),避免 XSS。
+- [app_v2.py](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/backend/app/app_v2.py):`.ipynb` 加入预览白名单并走 notebook 渲染;新增 `/api/raw` 端点(仅 `.pdf`,`inline` 内嵌,`safe_path` 校验)。
+
+**前端**
+
+- [app.js](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/app.js):文件树启用 `ipynb`/`pdf`(不再灰色禁用);`openFile` 遇 PDF 分流到 `openPdf()` 用 `<iframe>` 嵌浏览器原生阅读器;notebook 支持"源码/渲染"切换;关闭 reader 时清空 iframe 停止加载。
+- [index.html](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/index.html) / [styles.css](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/styles.css):reader 加 PDF iframe,补 notebook 单元、输出、报错、图片及 PDF 视图样式。
+
+> 请问能否实现对于.md、ipynb等文件类型的内容编辑和修改。
+
+在线内容编辑功能已全部实现,服务已重启,**18/18 后端测试全部通过**。
+
+**端到端验证结果**
+
+- **文本保存**:`.md` 编辑保存 → 200,内容正确写入;`format=markdown`,`mtime` 以字符串返回(`1784877149188258500`,验证了精度方案)。
+- **并发防护**:旧 mtime 保存 → **409**(文件已被其他修改);未确认 → **409**。
+- **安全**:路径穿越 `../../evil.md` → **400**。
+- **Notebook 按单元**:读到 2 个单元 → 改 Markdown/代码单元 → 200;文件仍是合法 JSON,`source` 为规范的行列表,**改动的代码单元 outputs 已清空、execution_count 置 null**,预览 html 正确反映改动。
+- **类型隔离**:ipynb 走文本保存端点 → **415**(强制走按单元编辑)。
+
+**改了什么**
+
+**后端** [app_v2.py](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/backend/app/app_v2.py)
+
+- `TEXT_EDITABLE_EXTENSIONS`(预览白名单减 `.ipynb`);`read_payload` 增返回 `mtime`(字符串)。
+- `POST /api/file/save`:确认 + `safe_path` + 类型校验 + `WRITE_LOCK` + mtime 乐观并发 + 保存后按需重建索引 + 操作日志。
+- `GET /api/notebook`(读单元结构)、`POST /api/notebook/save`(按 index 只更新 `source`,`json.dump` 回写,不动其它字段)。
+
+**前端** [index.html](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/index.html) / [app.js](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/app.js) / [styles.css](vscode-webview://0tdcdvg07nkenrvfb284e6lhb27ip7c8l2qle0k5j8i0an5g3bng/web/styles.css)
+
+- reader 加"编辑"按钮(仅 markdown/code/notebook 显示,PDF 不显示)、文本 textarea、Notebook 单元编辑器、底部工具栏(含"保存后更新索引"复选框、取消、保存)。
+- `enterEditMode/saveEdit/exitEditMode`:保存前 `confirmAction` 二次确认;成功后刷新预览、按需弹任务抽屉;**409 冲突有明确提示**;编辑态下点背景不会误关。
