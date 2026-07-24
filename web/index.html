@@ -15,71 +15,67 @@
       <button class="nav-item active" data-view="home"><span class="nav-icon">⌂</span><span>概览</span></button>
       <button class="nav-item" data-view="search"><span class="nav-icon">⌕</span><span>检索</span></button>
       <button class="nav-item" data-view="library"><span class="nav-icon">▤</span><span>资料库</span></button>
-      <button class="nav-item" data-view="inbox"><span class="nav-icon">↓</span><span>Inbox</span><span class="nav-badge" id="navInboxCount">0</span></button>
+      <button class="nav-item" data-view="inbox"><span class="nav-icon">↓</span><span>收件箱</span><span class="nav-badge" id="navInboxCount">0</span></button>
       <button class="nav-item" data-view="agent"><span class="nav-icon">✦</span><span>Agent</span></button>
+      <button class="nav-item" data-view="changes"><span class="nav-icon">±</span><span>变更审批</span><span class="nav-badge" id="navChangeCount">0</span></button>
       <button class="nav-item" data-view="health"><span class="nav-icon">◌</span><span>健康度</span></button>
     </nav>
     <div class="sidebar-foot"><span class="status-dot"></span><span>本地服务已连接</span></div>
   </aside>
-
   <main class="main">
     <header class="topbar">
-      <button class="menu-button" id="menuButton" aria-label="打开导航">☰</button>
-      <div><p class="eyebrow">工作空间</p><h1 id="pageTitle">知识库概览</h1></div>
-      <button class="quiet-button" id="refreshButton">刷新</button>
+      <button class="icon-button menu-button" id="menuButton" aria-label="打开导航" title="打开导航">☰</button>
+      <div class="page-identity"><p class="eyebrow">工作空间</p><h1 id="pageTitle">知识库概览</h1></div>
+      <div class="top-actions"><button class="icon-text-button" id="taskCenterButton"><span>◴</span><span>任务</span><b id="activeTaskCount">0</b></button><button class="primary-button" id="openUploadButton"><span>↑</span><span>上传文档</span></button></div>
     </header>
 
     <section class="view active" id="homeView">
-      <div class="welcome-row"><div><p class="section-kicker">今日状态</p><h2>让散落的信息重新进入流动。</h2></div><div class="index-state"><span>索引</span><strong id="indexState">读取中</strong></div></div>
-      <div class="metrics" aria-label="知识库指标">
-        <article><span>文档</span><strong id="docCount">—</strong><small>Markdown</small></article>
-        <article><span>原子笔记</span><strong id="noteCount">—</strong><small>Notes</small></article>
-        <article><span>内容地图</span><strong id="mocCount">—</strong><small>MOCs</small></article>
-        <article class="attention"><span>待处理</span><strong id="inboxCount">—</strong><small>Inbox</small></article>
-      </div>
+      <div class="welcome-row"><div><p class="section-kicker">今日状态</p><h2>把材料、思考与行动接在一起。</h2></div><div class="index-state"><span>混合索引</span><strong id="indexState">读取中</strong></div></div>
+      <div class="metrics" aria-label="知识库指标"><article><span>文档</span><strong id="docCount">—</strong><small>Markdown</small></article><article><span>原子笔记</span><strong id="noteCount">—</strong><small>Notes</small></article><article><span>内容地图</span><strong id="mocCount">—</strong><small>MOCs</small></article><article class="attention"><span>待处理</span><strong id="inboxCount">—</strong><small>Inbox</small></article></div>
       <div class="content-grid">
-        <section class="panel"><div class="panel-head"><div><p class="section-kicker">快速检索</p><h3>从已有知识开始</h3></div></div><form class="search-form" id="homeSearchForm"><input id="homeSearchInput" type="search" placeholder="搜索主题、项目或概念…" autocomplete="off"><button type="submit">检索</button></form><div class="search-hints"><button data-query="RAG">RAG</button><button data-query="知识管理">知识管理</button><button data-query="技术学习">技术学习</button></div></section>
+        <section class="panel search-panel"><div class="panel-head"><div><p class="section-kicker">语义检索</p><h3>从已有知识开始</h3></div><span class="capability-chip" id="vectorChip">Vector</span></div><form class="search-form" id="homeSearchForm"><input id="homeSearchInput" type="search" placeholder="搜索主题、项目或概念…" autocomplete="off"><button type="submit">检索</button></form><div class="search-hints"><button data-query="RAG">RAG</button><button data-query="知识管理">知识管理</button><button data-query="技术学习">技术学习</button></div></section>
         <section class="panel recent-panel"><div class="panel-head"><div><p class="section-kicker">最近更新</p><h3>继续上次的思路</h3></div></div><div class="file-list" id="recentFiles"></div></section>
       </div>
     </section>
 
     <section class="view" id="searchView">
-      <form class="search-page-form" id="searchForm"><input id="searchInput" type="search" placeholder="输入要检索的知识…" autocomplete="off"><button type="submit">搜索</button></form>
-      <div class="result-meta" id="resultMeta">输入关键词开始检索</div><div class="results" id="searchResults"></div>
+      <div class="search-workbench"><form class="search-page-form" id="searchForm"><input id="searchInput" type="search" placeholder="输入问题、概念或你记得的大意…" autocomplete="off"><button type="submit">搜索</button></form><div class="segmented-control" id="searchMode" aria-label="检索模式"><button class="active" data-mode="hybrid">混合</button><button data-mode="semantic">语义</button><button data-mode="keyword">关键词</button></div></div>
+      <div class="result-meta" id="resultMeta">输入关键词开始检索</div><div class="search-warning hidden" id="searchWarning"></div><div class="results" id="searchResults"></div>
     </section>
 
     <section class="view" id="libraryView">
-      <div class="view-heading"><div><p class="section-kicker">知识资产</p><h2>资料库</h2></div><span class="subtle">点击文本文件可直接阅读</span></div>
-      <div class="library-layout"><div class="tree-panel" id="fileTree"></div><div class="library-empty"><span>▤</span><strong>从左侧选择一个文件</strong><small>Markdown、代码和结构化文本可在线预览</small></div></div>
+      <div class="view-heading"><div><p class="section-kicker">知识资产</p><h2>资料库</h2></div><button class="outline-button" id="refreshLibraryButton">刷新目录</button></div>
+      <div class="library-layout"><div class="tree-panel" id="fileTree"></div><div class="library-empty"><span>▤</span><strong>选择一份文档开始阅读</strong><small>支持 Markdown、代码、Drawio XML 与结构化文本</small></div></div>
     </section>
 
     <section class="view" id="inboxView">
-      <div class="view-heading"><div><p class="section-kicker">待处理材料</p><h2>Inbox</h2></div><button class="outline-button" id="previewInboxButton">预览分流</button></div>
-      <div class="notice"><span class="notice-mark">i</span><p>预览只生成处理报告。确认归档后，原文件会移动到资料区，并生成索引与阅读笔记草案。</p></div>
-      <div class="inbox-table" id="inboxItems"></div>
-      <section class="action-output hidden" id="inboxOutput"><div class="panel-head"><div><p class="section-kicker">执行预览</p><h3>计划变更</h3></div><button class="danger-button" id="applyInboxButton">确认归档</button></div><ol id="inboxActions"></ol></section>
+      <div class="view-heading"><div><p class="section-kicker">捕获与分流</p><h2>收件箱</h2></div><div class="heading-actions"><button class="outline-button" id="inboxUploadButton"><span>↑</span> 上传</button><button class="primary-button" id="previewInboxButton">生成归档计划</button></div></div>
+      <div class="inbox-table" id="inboxItems"></div><section class="empty-action hidden" id="inboxEmpty"><span>✓</span><strong>收件箱已清空</strong><small>新的材料可以上传到 Inbox，也可以直接归类到目标目录。</small></section>
     </section>
 
     <section class="view" id="agentView">
       <div class="view-heading"><div><p class="section-kicker">本地知识助手</p><h2>Agent 工作台</h2></div></div>
-      <div class="agent-layout">
-        <section class="agent-composer">
-          <div class="mode-switch" role="tablist"><button class="active" data-agent-mode="ask">知识问答</button><button data-agent-mode="outline">生成大纲</button></div>
-          <form id="agentForm"><label for="agentPrompt" id="agentLabel">你想从知识库中了解什么？</label><textarea id="agentPrompt" rows="5" placeholder="例如：我关于 RAG 的资料有哪些，还缺什么？"></textarea><div class="outline-options hidden" id="outlineOptions"><label><input type="radio" name="outlineKind" value="roadmap" checked> 学习路线</label><label><input type="radio" name="outlineKind" value="report"> 报告大纲</label><label><input type="radio" name="outlineKind" value="article"> 文章大纲</label></div><div class="composer-foot"><span id="agentWriteHint">回答会引用本地索引内容</span><button type="submit" id="agentSubmit">开始检索</button></div></form>
-        </section>
-        <section class="agent-response" id="agentResponse"><span class="response-mark">✦</span><h3>等待一个好问题</h3><p>回答基于本地全文索引，并保留来源路径供你继续阅读。</p></section>
-      </div>
+      <div class="agent-layout"><section class="agent-composer"><div class="mode-switch" role="tablist"><button class="active" data-agent-mode="ask">知识问答</button><button data-agent-mode="outline">生成大纲</button></div><form id="agentForm"><label for="agentPrompt" id="agentLabel">你想从知识库中了解什么？</label><textarea id="agentPrompt" rows="5" placeholder="例如：我关于 RAG 的资料有哪些，还缺什么？"></textarea><div class="outline-options hidden" id="outlineOptions"><label><input type="radio" name="outlineKind" value="roadmap" checked> 学习路线</label><label><input type="radio" name="outlineKind" value="report"> 报告大纲</label><label><input type="radio" name="outlineKind" value="article"> 文章大纲</label></div><div class="composer-foot"><span id="agentWriteHint">使用混合检索并保留来源</span><button type="submit" id="agentSubmit">开始检索</button></div></form></section><section class="agent-response" id="agentResponse"><span class="response-mark">✦</span><h3>等待一个好问题</h3><p>回答将同时参考关键词与语义索引，并保留可追溯的来源路径。</p></section></div>
+    </section>
+
+    <section class="view" id="changesView">
+      <div class="view-heading"><div><p class="section-kicker">Human in the loop</p><h2>变更审批</h2></div><button class="outline-button" id="refreshChangesButton">刷新</button></div>
+      <div class="changes-layout"><div class="change-list" id="changeList"></div><section class="diff-pane" id="diffPane"><div class="diff-empty"><span>±</span><strong>选择一项待审批变更</strong><small>检查目标路径和 Diff 后再应用。</small></div></section></div>
     </section>
 
     <section class="view" id="healthView">
       <div class="view-heading"><div><p class="section-kicker">维护与质量</p><h2>知识库健康度</h2></div><button class="primary-button" id="runHealthButton">运行完整体检</button></div>
-      <div class="maintenance-strip"><div><span>全文索引</span><strong id="healthIndexCount">—</strong><small id="healthIndexTime">等待状态</small></div><button class="outline-button" id="rebuildIndexButton">重建索引</button></div>
+      <div class="index-grid"><section class="index-summary"><span>FTS5 关键词索引</span><strong id="healthIndexCount">—</strong><small id="healthIndexTime">等待状态</small></section><section class="index-summary vector-summary"><span>Qwen 向量索引</span><strong id="vectorIndexCount">—</strong><small id="vectorIndexTime">等待状态</small></section><button class="outline-button rebuild-button" id="rebuildIndexButton">重建全部索引</button></div>
       <div class="reports-grid" id="reportsGrid"></div>
     </section>
   </main>
 </div>
 
-<dialog class="reader" id="reader"><div class="reader-head"><div><p id="readerPath"></p><h2 id="readerTitle"></h2></div><button id="closeReader" aria-label="关闭">×</button></div><pre id="readerContent"></pre></dialog>
+<dialog class="reader" id="reader"><div class="reader-head"><div><p id="readerPath"></p><h2 id="readerTitle"></h2></div><div class="reader-actions"><button class="icon-button" id="toggleRawButton" aria-label="切换源码视图" title="切换源码视图">&lt;/&gt;</button><button class="icon-button" id="closeReader" aria-label="关闭" title="关闭">×</button></div></div><div class="frontmatter-strip hidden" id="readerFrontmatter"></div><article class="markdown-body" id="readerRendered"></article><pre class="reader-raw hidden" id="readerContent"></pre></dialog>
+
+<dialog class="upload-dialog" id="uploadDialog"><form id="uploadForm"><div class="dialog-head"><div><p class="section-kicker">Import</p><h2>上传文档</h2></div><button type="button" class="icon-button" id="closeUploadButton" aria-label="关闭">×</button></div><label class="upload-dropzone" id="uploadDropzone" for="uploadInput"><input id="uploadInput" type="file" multiple hidden><span class="upload-symbol">↑</span><strong>选择文件或拖放到这里</strong><small>单文件最大 100 MB</small></label><div class="upload-file-list hidden" id="uploadFileList"></div><label class="field-label" for="uploadDirectory">归类目录</label><select id="uploadDirectory" required></select><label class="checkbox-row"><input id="uploadIndexes" type="checkbox" checked><span>上传后更新关键词与向量索引</span></label><div class="dialog-actions"><button type="button" class="outline-button" id="cancelUploadButton">取消</button><button type="submit" class="primary-button" id="uploadSubmitButton">确认上传</button></div></form></dialog>
+
+<aside class="task-drawer" id="taskDrawer" aria-hidden="true"><div class="task-drawer-head"><div><p class="section-kicker">Background</p><h2>任务进度</h2></div><button class="icon-button" id="closeTaskDrawer" aria-label="关闭">×</button></div><div class="task-list" id="taskList"></div></aside><div class="drawer-scrim" id="drawerScrim"></div>
 <div class="toast" id="toast" role="status"></div>
 <dialog class="confirm-dialog" id="confirmDialog"><div class="confirm-icon">!</div><h2 id="confirmTitle">确认操作</h2><p id="confirmMessage"></p><div class="confirm-actions"><button class="outline-button" id="cancelConfirm">取消</button><button class="danger-button" id="acceptConfirm">确认执行</button></div></dialog>
 <script src="/static/app.js"></script>

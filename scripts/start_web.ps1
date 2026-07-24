@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-python -c "import fastapi, uvicorn" 2>$null
+python -c "import fastapi, uvicorn, httpx, multipart, markdown_it" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "缺少 Web 依赖，请先运行: py -m pip install -r requirements.txt" -ForegroundColor Yellow
     exit 1

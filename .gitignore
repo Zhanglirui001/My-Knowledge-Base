@@ -3,3 +3,5 @@
 .venv/
 90_System/Agent/*.sqlite3
 90_System/Agent/Web操作日志.jsonl
+90_System/Agent/changes/
+.env

@@ -88,4 +88,4 @@ py -m pip install -r requirements.txt
 powershell -ExecutionPolicy Bypass -File scripts/start_web.ps1
 ```
 
-打开 `http://127.0.0.1:8000`。Web v0 提供概览、全文检索、资料浏览、Inbox 分流、Agent 问答/大纲和知识库健康维护。详细说明见 [Web 服务说明](./90_System/Web服务说明.md)。
+打开 `http://127.0.0.1:8000`。Web 操作台提供文档上传与目录归类、Markdown 富文本阅读、FTS5 + Qwen 向量混合检索、后台任务进度、Diff 审批、Agent 问答/大纲和知识库健康维护。详细说明见 [Web 服务说明](./90_System/Web服务说明.md)。
