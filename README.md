@@ -80,3 +80,12 @@ python scripts/kb_agent.py health
 - 原子笔记：使用 [原子笔记模板](./90_System/Templates/原子笔记模板.md)
 - MOC：使用 [MOC 模板](./90_System/Templates/MOC模板.md)
 - 资料索引：使用 [资料索引模板](./90_System/Templates/资料索引模板.md)
+
+## Web 操作台
+
+```powershell
+py -m pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File scripts/start_web.ps1
+```
+
+打开 `http://127.0.0.1:8000`。Web v0 提供概览、全文检索、资料浏览、Inbox 分流、Agent 问答/大纲和知识库健康维护。详细说明见 [Web 服务说明](./90_System/Web服务说明.md)。
