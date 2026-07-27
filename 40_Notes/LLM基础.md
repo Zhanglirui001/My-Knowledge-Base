@@ -4,6 +4,8 @@
 
 ### 大模型接入 chat Completions API
 
+---
+
 #### 环境与依赖安装
 
 ```python
@@ -73,7 +75,9 @@ print("✅ .env 文件已创建，请替换为你的真实 API Key")
 
 #### 第一个API调用
 
-&emsp;&emsp;现在环境已经准备就绪，我们将编写第一个真正的 API 调用代码。我们选择 DeepSeek 作为起点，因为它<font color=red>注册简单、免费额度充足、响应速度快</font>，非常适合新手练习。
+---
+
+现在环境已经准备就绪，我们将编写第一个真正的 API 调用代码。我们选择 DeepSeek 作为起点，因为它<font color=red>注册简单、免费额度充足、响应速度快</font>，非常适合新手练习。
 
 &emsp;通过一个最简单的"问答"任务：向模型提问"你是谁？"，并接收模型的回复。通过这个例子，你将理解 API 调用的核心流程、消息结构，以及如何解析响应结果。
 
@@ -185,7 +189,9 @@ print(f"  总计 Token: {response.usage.total_tokens}")
 
 #### 核心参数调优
 
-&emsp;&emsp;在掌握了基本的 API 调用流程后，现在我们需要学习如何通过参数来控制模型的行为。<font color=red>最重要的两个参数是 `temperature` 和 `max_tokens`</font>——前者控制输出的随机性和创造性，后者限制输出的最大长度。
+---
+
+在掌握了基本的 API 调用流程后，现在我们需要学习如何通过参数来控制模型的行为。<font color=red>最重要的两个参数是 `temperature` 和 `max_tokens`</font>——前者控制输出的随机性和创造性，后者限制输出的最大长度。
 
 &emsp;&emsp;理解并合理使用这两个参数，可以让你精确控制模型的输出风格和成本。不同的应用场景需要不同的参数配置：严肃的文档生成需要低 temperature，创意写作需要高 temperature；简短回复需要小 max_tokens，长文本生成需要大 max_tokens。
 
@@ -307,7 +313,9 @@ for max_tok in token_limits:
 
 > &emsp;**成本优化技巧**：如果只需要简短回复，务必设置合理的 `max_tokens`，避免模型生成不必要的长文本浪费费用。
 
-#### &emsp;多平台兼容&emsp;
+### &emsp;多平台兼容
+
+---
 
  OpenAI SDK 兼容格式的概念。现在是时候实践这个强大的特性了——<font color=red>通过修改 `api_key`、`base_url` 和 `model` 三个参数，我们可以用同一套代码调用不同平台的模型</font>。
 
@@ -386,3 +394,327 @@ print("\n" + "="*60 + "\n")
 ```
 
 #### 流式输出
+
+---
+
+&emsp;&emsp;在前面的所有示例中，我们都是等待模型生成完整回复后才显示结果。但在实际应用中（如聊天机器人、AI 助手），<font color=red>用户更希望看到"打字机效果"——文字逐字逐句出现</font>，而不是长时间等待后突然显示一大段文字。
+
+&emsp;&emsp;OpenAI API 提供了 **流式输出（Streaming）** 功能，通过设置 `stream=True`，可以让模型边生成边返回内容。这不仅提升了用户体验，还能让用户在生成过程中提前终止，节省成本。
+
+```python
+import time
+
+# 创建客户端
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com"
+)
+
+# 流式调用
+print("模型正在生成回复（流式输出）：\n")
+
+stream = client.chat.completions.create(
+    model="deepseek-chat",
+    messages=[{"role": "user", "content": "用三句话介绍人工智能的发展历程"}],
+    stream=True  # 启用流式输出
+)
+
+# 逐块接收并打印
+for chunk in stream:
+    # 提取增量内容
+    delta_content = chunk.choices[0].delta.content
+    
+    if delta_content:
+        print(delta_content, end="", flush=True)  # 实时打印，不换行
+        time.sleep(0.1)  # 模拟打字机效果（可选）
+
+print("\n\n✅ 流式输出完成")
+```
+
+&emsp;&emsp;这段代码的关键点：
+
+1. **`stream=True`**：告诉 API 使用流式模式返回结果
+
+2. **迭代 stream 对象**：返回值是一个迭代器，每次返回一小块内容
+
+3. **`chunk.choices[0].delta.content`**：提取增量内容（注意是 `delta` 而不是 `message`）
+
+4. **`print(..., end="", flush=True)`**：实时打印不换行，`flush=True` 确保立即显示
+
+&emsp;&emsp;运行后，你会看到文字逐字出现，体验类似 ChatGPT 的打字机效果。
+
+**流式输出的完整处理**
+
+&emsp;&emsp;在实际应用中，我们通常需要在流式输出的同时保存完整内容，以便后续处理。下面是一个更完整的示例：
+
+```python
+def stream_chat(prompt, model="deepseek-chat"):
+    """
+    流式聊天函数，边生成边显示，同时返回完整内容
+    
+    Args:
+        prompt: 用户输入
+        model: 模型名称
+    
+    Returns:
+        完整的生成内容
+    """
+    # 初始化 OpenAI 客户端，配置 DeepSeek 的 API Key 和 Base URL
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com"
+    )
+    
+    # 发起流式对话请求，开启 stream 模式
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        stream=True
+    )
+    # 用于保存完整内容
+    full_content = ""  
+    
+    print("AI: ", end="", flush=True)
+    
+    # 遍历流式响应
+    for chunk in stream:
+        delta_content = chunk.choices[0].delta.content
+        
+        # 如果有内容，打印并保存
+        if delta_content:
+            print(delta_content, end="", flush=True)
+            full_content += delta_content
+    
+    print("\n")  # 换行
+    
+    return full_content
+
+# 测试
+user_input = "写一个 Python 的 Hello World 程序"
+result = stream_chat(user_input)
+
+print(f"完整内容已保存，共 {len(result)} 个字符")
+```
+
+&emsp;&emsp;这个封装后的函数同时实现了：
+- 实时显示流式输出（用户体验）
+- 保存完整内容（便于后续处理）
+- 返回生成结果（可用于日志、数据库存储等）
+
+&emsp;&emsp;流式输出特别适合以下场景：
+- **聊天机器人**：用户看到逐字生成，体验更自然
+- **长文本生成**：用户可以边看边等，不会觉得卡顿
+- **交互式应用**：用户可以在生成过程中判断是否继续等待
+
+> &emsp;**注意**：流式模式下无法直接获取 `usage` 信息（Token 统计），如果需要统计成本，建议在非流式模式下测试，或使用第1.1节介绍的 tiktoken 本地估算。
+
+#### **错误处理**
+
+---
+
+&emsp;&emsp;在实际应用中，API 调用可能遇到各种异常：<font color=red>API Key 错误、余额不足、网络超时、请求频率超限</font>等。如果不做错误处理，程序会直接崩溃，用户体验极差。
+
+&emsp;&emsp;这一节我们会学习如何优雅地处理这些异常，包括分类捕获不同错误、实现自动重试机制，以及提供友好的错误提示。掌握这些技巧后，你的应用将更加健壮和可靠。
+
+**常见错误类型与分类捕获**
+
+&emsp;&emsp;OpenAI SDK 定义了多种异常类型，我们可以分类捕获并给出不同的处理方式：
+
+```python
+from openai import (
+    OpenAI,
+    AuthenticationError,  # 认证错误（API Key 无效）
+    RateLimitError,       # 速率限制错误（请求过快）
+    APIConnectionError,   # 网络连接错误
+    APIError              # 通用 API 错误
+)
+
+def safe_call_llm(prompt, max_retries=3):
+    """
+    带错误处理的 API 调用
+    
+    Args:
+        prompt: 用户输入
+        max_retries: 最大重试次数
+    
+    Returns:
+        模型回复或错误信息
+    """
+    # 初始化 OpenAI 客户端，配置 DeepSeek 的 API Key 和 Base URL
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com"
+    )
+    
+    # 循环尝试 API 调用，最多重试 max_retries 次
+    for attempt in range(max_retries):
+        try:
+            # 发起 API 调用
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30.0  # 设置超时时间（秒）
+            )
+            return response.choices[0].message.content
+        
+        except AuthenticationError as e:
+            # 认证错误，无需重试
+            return f"❌ API Key 无效或已过期，请检查环境变量配置"
+        
+        except RateLimitError as e:
+            # 速率限制，等待后重试
+            wait_time = 2 ** attempt  # 指数退避：1秒、2秒、4秒...
+            print(f"⚠️ 请求过快，等待 {wait_time} 秒后重试...")
+            time.sleep(wait_time)
+            continue
+        
+        except APIConnectionError as e:
+            # 网络错误，重试
+            print(f"⚠️ 网络连接失败（第 {attempt+1}/{max_retries} 次），重试中...")
+            time.sleep(1)
+            continue
+        
+        except APIError as e:
+            # 通用 API 错误
+            return f"❌ API 调用失败: {str(e)}"
+        
+        except Exception as e:
+            # 其他未知错误
+            return f"❌ 未知错误: {str(e)}"
+    
+    return f"❌ 重试 {max_retries} 次后仍然失败，请检查网络或稍后再试"
+
+# 测试错误处理
+test_prompt = "用一句话介绍一下 Python"
+result = safe_call_llm(test_prompt)
+print(result)
+```
+
+&emsp;&emsp;这个函数实现了以下错误处理策略：
+
+- **AuthenticationError**：API Key 无效，直接返回错误提示，不重试（因为重试也无意义）
+
+- **RateLimitError**：请求频率超限，使用**指数退避**策略重试（等待时间逐次翻倍）
+
+- **APIConnectionError**：网络连接失败，等待 1 秒后重试
+
+- **APIError**：通用 API 错误，返回具体错误信息
+
+- **Exception**：兜底捕获所有未知错误
+
+&emsp;&emsp;指数退避（Exponential Backoff）是一种常用的重试策略：首次重试等待 1 秒，第二次等待 2 秒，第三次等待 4 秒……这样可以避免在高峰期持续发送请求加剧服务器压力。
+
+**常见错误场景与排查方法**
+
+&emsp;&emsp;在实际使用中，你可能会遇到以下错误场景。我们通过一个对比表格来总结常见错误及其解决方法：
+
+<style>
+.center {
+width: auto;
+display: table;
+margin-left: auto;
+margin-right: auto;
+}
+</style>
+<p align="center"><font face="黑体" size=4>常见 API 错误与排查方法</font></p>
+<div class="center">
+
+| 错误类型                      | 典型提示            | 可能原因               | 解决方法                      |
+| ----------------------------- | ------------------- | ---------------------- | ----------------------------- |
+| **401 Unauthorized**          | Invalid API Key     | API Key 错误或过期     | 检查 .env 文件，确认 Key 正确 |
+| **429 Rate Limited**          | Rate limit exceeded | 请求频率过快           | 降低请求频率，或升级套餐      |
+| **400 Bad Request**           | Invalid model name  | 模型名称错误           | 查阅平台文档，确认模型名      |
+| **500 Internal Server Error** | Server error        | 平台服务异常           | 等待一段时间后重试            |
+| **Timeout**                   | Request timeout     | 网络慢或模型响应慢     | 增加 timeout 参数，或优化网络 |
+| **Insufficient Balance**      | Quota exceeded      | 余额不足或免费额度用完 | 充值或等待额度刷新            |
+
+</div>
+
+&emsp;&emsp;当遇到错误时，推荐的排查步骤：
+
+**步骤一：查看完整错误信息**
+
+&emsp;&emsp;不要只看错误类型，完整的错误信息通常包含了具体原因。可以通过 `str(e)` 打印完整错误：
+
+```python
+except APIError as e:
+    print(f"完整错误信息: {str(e)}")
+```
+
+**步骤二：检查基础配置**
+
+- API Key 是否正确（复制时没有多余空格）
+
+- base_url 是否正确（注意 http/https、末尾是否有斜杠）
+
+- model 名称是否正确（区分大小写）
+
+**步骤三：测试网络连接**
+
+&emsp;&emsp;可以用简单的测试验证网络是否通畅：
+
+```python
+import requests
+import os
+
+# 获取 API Key (建议从环境变量获取，或者直接填入)
+# api_key = "sk-xxxxxxxxxxxx" 
+api_key = os.getenv("DEEPSEEK_API_KEY") 
+
+if not api_key:
+    print("错误：未找到 API Key")
+else:
+    # DeepSeek 基础 URL
+    base_url = "https://api.deepseek.com"
+    
+    # 构造请求头，注意 Bearer 后面的空格
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # 尝试访问 /models 端点，这是标准的验证连接方式
+        response = requests.get(f"{base_url}/models", headers=headers)
+        
+        print(f"状态码: {response.status_code}")
+        
+        if response.status_code == 200:
+            print("连接成功！可用模型列表:", response.json())
+        else:
+            print("连接失败:", response.text)
+            
+    except Exception as e:
+        print(f"发生错误: {e}")
+```
+
+**步骤四：查看平台控制台**
+
+&emsp;&emsp;登录平台控制台，查看：
+- 余额是否充足
+
+- API Key 是否被禁用
+
+- 是否有调用记录（如果有，说明网络和认证都正常）
+
+&emsp;&emsp;通过这些步骤，大部分问题都能快速定位和解决。
+
+### Chat Completions API进阶使用
+
+---
+
+&emsp;&emsp;在掌握了基础的 API 调用流程后，现在我们需要解锁更高级的功能，让你的应用能够实现更复杂、更智能的交互。<font color=red>这一章我们会学习五个进阶能力：多轮对话、Function Calling、多模态输入、提示词工程、异步批处理</font>。
+
+&emsp;&emsp;这些能力是构建实用 AI 应用的关键。
+
+* 多轮对话让 AI 能够记住上下文，实现连贯的交流；
+
+* Function Calling 让 AI 能够调用外部工具，突破纯文本生成的限制；
+
+* 多模态输入让 AI 能够"看图说话"，理解视觉信息；
+
+* 提示词工程教你如何写出高质量的 Prompt，最大化模型能力；
+
+* 异步批处理则通过并发调用大幅提升效率。
+
+&emsp;&emsp;掌握这些技能后，你将能够构建真正实用的 AI 应用——从简单的聊天机器人，到能查询天气、搜索信息的智能助手，再到能分析图片、生成报告的多模态应用。让我们开始这段进阶之旅。
