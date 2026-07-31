@@ -1183,3 +1183,48 @@ margin-right: auto;
 | **Modelfile**                                  | Ollama 的模型配置文件，用于定义模型来源、系统提示词、参数等  | 导入自定义 GGUF 模型到 Ollama（第9章）               |
 | **OpenAI API 兼容**                            | 指服务端实现了与 OpenAI API 相同的接口协议（`/v1/chat/completions` 等） | Ollama 和 vLLM 都支持，客户端代码可通用（第9、10章） |
 
+
+
+### Agent 发展趋势
+
+**从 Prompt 到 Agent**
+
+<style>
+.center {
+width: auto;
+display: table;
+margin-left: auto;
+margin-right: auto;
+}
+</style>
+<p align="center"><font face="黑体" size=4>大模型应用技术演进四阶段</font></p>
+<div class="center">
+
+| 阶段    | 时间      | 核心技术                       | 解决的问题           | 遗留的问题         |
+| ------- | --------- | ------------------------------ | -------------------- | ------------------ |
+| Stage 1 | 2023.Q1   | 提示工程（Prompt Engineering） | 如何让 LLM 理解任务  | 知识库更新不及时   |
+| Stage 2 | 2023.Q3   | 函数调用（Function Calling）   | 如何让 LLM 调用工具  | 大模型幻觉问题     |
+| Stage 3 | 2023.Q4   | RAG（检索增强生成）            | 如何注入私有知识     | 只能单步问答       |
+| Stage 4 | 2024-2026 | AI Agent（智能体）             | 如何自主完成复杂任务 | 可靠性、成本、安全 |
+
+&emsp;&emsp;**Stage 1：提示工程（Prompt Engineering）**
+
+&emsp;&emsp;2020 年，OpenAI 在 GPT-3 论文中提出了 `In-Context Learning`（上下文学习）的概念。这个发现开启了使用大模型的新方式：通过向模型提供少量标注的"输入-输出对"示例（Few-Shot Learning），在不需要大规模微调的情况下即可显著改善大模型的输出质量。
+
+> 📄 **论文链接**：[Language Models are Few-Shot Learners](https://arxiv.org/pdf/2005.14165)
+
+&emsp;&emsp;这一阶段解决了"如何让 LLM 理解任务"的问题，但遗留了知识库更新不及时的痛点——LLM 的训练数据有截止日期，无法获取实时信息。
+
+&emsp;&emsp;**Stage 2：函数调用（Function Calling）**
+
+&emsp;&emsp;2023 年 6 月，OpenAI 为其 GPT 模型引入了函数调用功能。通过函数调用，我们可以让 LLM 智能地选择工具来回答问题，并以 JSON 格式返回结构化响应。这解决了"如何让 LLM 调用工具"的问题，但大模型幻觉问题依然存在。
+
+&emsp;&emsp;**Stage 3：RAG（Retrieval-Augmented Generation）**
+
+&emsp;&emsp;RAG 通过"检索 + 生成"的方式缓解了幻觉问题：先从知识库中检索相关文档，再让 LLM 基于检索结果生成答案。这在很大程度上约束了 LLM 的输出范围。但传统单轮 RAG pipeline 有一个根本局限：它是"单步"的——用户提问 → 检索一次 → 生成答案，无法处理需要多步推理、多次检索、动态调整策略的复杂任务。
+
+&emsp;&emsp;**Stage 4：AI Agent（智能体）**
+
+&emsp;&emsp;Agent 整合了前三个阶段的能力：利用提示工程激发涌现能力、通过函数调用使用工具、借助 RAG 注入知识，并在此基础上实现了多步迭代、动态规划、自主决策。<font color=red>这就是为什么我们说"提示工程解决了理解问题，函数调用解决了行动问题，RAG 解决了知识问题，Agent 解决了能力问题"。</font>
+
+&emsp;&emsp;从这个演进表可以看出，Agent 不是凭空出现的，而是在前三个阶段的基础上自然演化出来的。理解了这条技术演进脉络，我们才能更深刻地理解 Agent 的价值所在。
