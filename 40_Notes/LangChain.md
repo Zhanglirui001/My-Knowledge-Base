@@ -1621,3 +1621,297 @@ forecast = result["structured_response"]
 print(f"{forecast.city}天气: {forecast.condition}, {forecast.temperature}°C")
 ```
 
+#####  带判断的结构
+
+```python
+from pydantic import BaseModel
+
+# 1. 定义年龄模型，限制范围 0-150
+class AgeProfile(BaseModel):
+    name: str
+    age: int = Field(ge=0, le=150)  # 年龄必须在0-150之间
+
+# 2. 定义模型
+model = load_chat_model(
+    model="gpt-4o-mini",
+    provider="openai",
+)
+
+# 3. 创建智能体agent
+agent = create_agent(
+    model=model,
+    tools=[],
+    response_format=AgeProfile
+)
+
+# 4. 模型返回age=999（非法值）
+result = agent.invoke({
+    "messages": [{
+        "role":"user",
+        "content": "张三的年龄是999岁"  # 明显不合理的数据
+    }]
+})
+
+# LangChain会自动：
+# 1. 捕获ValidationError
+# 2. 在ToolMessage中反馈错误详情
+# 3. 让模型重新生成
+# 最终返回合法值
+print(result["structured_response"])
+```
+
+##### **JsonOutputParser**
+
+```python
+from langchain_core.output_parsers import JsonOutputParser
+import json
+from pydantic import BaseModel, Field
+
+# 1. 定义输出结构
+class WeatherInfo(BaseModel):
+    """天气信息"""
+    city: str = Field(description="城市名称")
+    temperature: int = Field(description="温度（摄氏度）")
+    condition: str = Field(description="天气状况")
+
+# 2. 创建 JSON 输出解析器
+json_parser = JsonOutputParser(pydantic_object=WeatherInfo)
+
+# 3. 创建提示模板（关键：必须包含 "json" 这个词）
+prompt = ChatPromptTemplate.from_template(
+        
+"""请根据以下信息提取天气数据，并以 JSON 格式返回。
+
+信息：{weather_info}
+
+请返回包含以下字段的 JSON：
+- city: 城市名称
+- temperature: 温度（摄氏度）
+- condition: 天气状况
+
+必须返回以下 JSON 格式（不要包含任何其他文本）：
+{{"city": "城市名称", "temperature": 温度数字, "condition": "天气状况"}}
+
+例如：{{"city": "北京", "temperature": 25, "condition": "晴"}}
+
+JSON 格式：
+""")
+
+# 4. 定义模型
+model = load_chat_model(
+    model="gpt-4o-mini",
+    provider="openai",
+)
+
+# 5. 构建链
+runnable = prompt | model | json_parser
+
+# 6. 调用
+result = runnable.invoke({"weather_info": "北京今天晴，温度25度"})
+print(result)
+print(result["city"])
+```
+
+
+|        分类         |            常用解析器            |                     作用                     |
+| :-----------------: | :------------------------------: | :------------------------------------------: |
+|    **基础解析**     |        `StrOutputParser`         |       将模型输出解析成纯字符串（默认）       |
+| **JSON 结构化解析** |        `JsonOutputParser`        |          将 LLM 输出强制解析为 JSON          |
+|                     |      `PydanticOutputParser`      |     使用 Pydantic v1 模型进行结构化输出      |
+|                     | `PydanticOutputFunctionsParser`  | 用于 Function Calling 的 Pydantic 结构化解析 |
+|    **列表解析**     | `CommaSeparatedListOutputParser` |  输出如 `"a,b,c"`<br/> → `["a", "b", "c"]`   |
+|                     |        `ListOutputParser`        |               更通用的列表解析               |
+|  **布尔/数值解析**  |      `BooleanOutputParser`       |        输出 "yes" / "no" → True/False        |
+|                     |       `FloatOutputParser`        |             输出模型内容转 float             |
+|                     |        `IntOutputParser`         |              输出模型内容转 int              |
+|   **复杂结构化**    |        `EnumOutputParser`        |          让模型输出固定几个选项之一          |
+|                     |     `DataclassOutputParser`      |     使用 Python dataclass 进行结构化输出     |
+
+**结构化输出关键要点：**
+
+1. **输出json格式提示词必须包含 "json" 关键词**
+   - DeepSeek API 要求提示词中包含 "json" 这个词
+   - 否则会报错：`Prompt must contain the word 'json'`
+
+2. **推荐方案对比**
+   - 方案 1 (JsonOutputParser)：最简洁，推荐使用
+   - 方案 2 (with_structured_output)：需要提示词包含 "json"
+   - 方案 3 (可选手动 JSON 解析)：最稳定，适合关键应用
+
+3. **配置建议**
+   - 设置 `temperature=0.0` 获得更稳定的输出
+   - 最好提供清晰的 JSON 格式示例
+
+4. **常见错误**
+   - 提示词中没有 "json" 关键词
+   - 没有设置低温度参数
+   - 没有提供 JSON 格式示例
+   - 没有处理解析异常
+
+### 简单问答机器人
+
+```python
+from langchain_deepseek import ChatDeepSeek
+from langchain.messages import HumanMessage, AIMessage, SystemMessage
+
+# 1️⃣ 初始化模型（LangChain 1.0 接口）
+model = load_chat_model(
+    model="gpt-4o-mini",
+    provider="openai",
+)
+
+# 2️⃣ 初始化系统提示词（System Prompt）
+system_message = SystemMessage(
+    content="你叫小智，是一名乐于助人的智能助手。请在对话中保持温和、有耐心的语气。"
+)
+
+# 3️⃣ 初始化消息历史
+messages = [system_message]
+
+print("🔹 输入 exit 退出对话\n")
+
+# 4️⃣ 主循环（支持多轮对话 + 流式输出）
+while True:
+    user_input = input("👤 你：")
+    if user_input.lower() in {"exit", "quit"}:
+        print("🧩 对话结束，再见！")
+        break
+
+    # 追加用户消息
+    messages.append(HumanMessage(content=user_input))
+
+    # 实时输出模型生成内容
+    print("🤖 小智：", end="", flush=True)
+    full_reply = ""
+
+    # ✅ LangChain 1.0 标准写法：流式输出
+    for chunk in model.stream(messages):
+        if chunk.content:
+            print(chunk.content, end="", flush=True)
+            full_reply += chunk.content
+
+    print("\n" + "-" * 40)  # 分隔线
+
+    # 追加 AI 回复消息
+    messages.append(AIMessage(content=full_reply))
+
+    # 保持消息长度（只保留最近50轮）
+    messages = messages[-50:]
+```
+
+#### gradio界面搭建
+
+```python
+# 安装 Gradio
+!pip install gradio
+```
+
+```python
+#AutoDL中需要映射端口后，才能通过本地浏览器进行访问
+#ssh -L 7860:127.0.0.1:7860 -p 25660 root@connect.westc.gpuhub.com
+```
+
+```python
+import gradio as gr
+from langchain_deepseek import ChatDeepSeek
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+# ──────────────────────────────────────────────
+# 1. 初始化模型与系统设定
+# ──────────────────────────────────────────────
+model = ChatDeepSeek(model="deepseek-chat")
+
+system_message = SystemMessage(
+    content="你叫小智，是一名乐于助人的智能助手。请在对话中保持友好、有耐心、温和的语气。"
+)
+
+# ──────────────────────────────────────────────
+# 2. 定义 Gradio 界面
+# ──────────────────────────────────────────────
+CSS = """
+.main-container {max-width: 1200px; margin: 0 auto; padding: 20px;}
+.header-text {text-align: center; margin-bottom: 20px;}
+"""
+
+def create_chatbot() -> gr.Blocks:
+    with gr.Blocks(title="DeepSeek Chat", css=CSS) as demo:
+        with gr.Column(elem_classes=["main-container"]):
+            gr.Markdown("# 🤖 LangChain 1.0 × DeepSeek Chatbot", elem_classes=["header-text"])
+            gr.Markdown("基于 LangChain 1.0 标准接口的流式对话机器人", elem_classes=["header-text"])
+
+            chatbot = gr.Chatbot(
+                height=500,
+                show_copy_button=True,
+                avatar_images=(
+                    "https://cdn.jsdelivr.net/gh/twitter/twemoji@v14.0.2/assets/72x72/1f464.png",
+                    "https://cdn.jsdelivr.net/gh/twitter/twemoji@v14.0.2/assets/72x72/1f916.png",
+                ),
+            )
+            msg = gr.Textbox(placeholder="请输入您的问题...", container=False, scale=7)
+            submit = gr.Button("发送", scale=1, variant="primary")
+            clear = gr.Button("清空", scale=1)
+
+        # 状态：保存消息历史（LangChain Message 对象）
+        state = gr.State([])
+
+        # ─────────────── 主响应函数（流式输出） ───────────────
+        def respond(user_msg: str, chat_hist: list, messages_list: list):
+
+            # 1️⃣ 输入为空则直接返回
+            if not user_msg.strip():
+                yield "", chat_hist, messages_list
+                return
+
+            # 2️⃣ 构建消息上下文（包括系统提示）
+            if not messages_list:
+                messages_list = [system_message]
+
+            messages_list.append(HumanMessage(content=user_msg))
+
+            # 3️⃣ 添加用户消息到聊天历史
+            chat_hist = chat_hist + [(user_msg, "")]
+
+            # 4️⃣ 流式生成模型回复
+            partial = ""
+            for chunk in model.stream(messages_list):
+                if chunk.content:
+                    partial += chunk.content
+                    # 每次更新最后一条消息
+                    chat_hist[-1] = (user_msg, partial)
+                    # 立即 yield，让 UI 实时更新
+                    # 返回空字符串给 msg，清空输入框
+                    yield "", chat_hist, messages_list
+
+            # 5️⃣ 保存完整 AI 回复并截断历史（保留50轮）
+            messages_list.append(AIMessage(content=partial))
+            messages_list = messages_list[-50:]
+
+            # 6️⃣ 最后一次 yield 确保状态同步
+            yield "", chat_hist, messages_list
+
+        # ─────────────── 清空对话函数 ───────────────
+        def clear_history():
+            return "", [], []
+
+        # ─────────────── Gradio 事件绑定 ───────────────
+        # 返回 msg、chatbot 和 state
+        # msg 返回空字符串来清空输入框
+        msg.submit(respond, [msg, chatbot, state], [msg, chatbot, state])
+        submit.click(respond, [msg, chatbot, state], [msg, chatbot, state])
+        clear.click(clear_history, outputs=[msg, chatbot, state])
+
+    return demo
+
+# ──────────────────────────────────────────────
+# 3. 启动 Gradio 应用
+# ──────────────────────────────────────────────
+
+print("\n🚀 启动 Gradio 应用...")
+demo = create_chatbot()
+demo.launch(server_name="0.0.0.0", server_port=7860, share=False, debug=True)
+```
+
+
+
+
+
